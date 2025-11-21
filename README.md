@@ -1,20 +1,76 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+VR Engineering Lab for Aerospace Engineering is an immersive virtual reality application designed to help students visualize, interact with, and perform aerospace engineering experiments in a simulated environment.
+The project brings complex aerospace concepts to life through 3D models, interactive simulations, and real-time physics — making learning more intuitive, engaging, and accessible.
 
-# Run and deploy your AI Studio app
+This VR lab can be used for:
 
-This contains everything you need to run your app locally.
+Understanding aircraft and spacecraft components
 
-View your app in AI Studio: https://ai.studio/apps/drive/1KzSBXSh04tl-11R76iL8MDRh9q1ZV5cm
+Performing virtual wind-tunnel experiments
 
-## Run Locally
+Exploring thrust, drag, lift, and aerodynamic flow
 
-**Prerequisites:**  Node.js
+Observing rocket engine parameters (fuel flow rate, nozzle design, ISP, etc.)
 
+Conducting hands-on practicals without physical lab constraints
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+🎯 Features
+✈️ Aerospace Experiment Modules
+
+Aerodynamics Module:
+
+Visualize airflow over wings
+
+Adjust angle of attack
+
+See lift, drag force vectors
+
+Rocket Propulsion Module:
+
+Fuel flow rate visualization
+
+Nozzle expansion simulation
+
+Thrust and ISP calculations
+
+Satellite & Orbital Mechanics Module:
+
+Orbit visualization
+
+Apogee/perigee control
+
+Aircraft Systems:
+
+Engine components
+
+Control surfaces (aileron, rudder, elevator)
+
+Real-time interaction
+
+🥽 VR Interactivity
+
+Fully immersive VR using Unity XR or OpenXR Toolkit
+
+Grab, rotate, scale models
+
+Real-time data panels
+
+Sliders and UI controls to modify parameters
+
+Step-by-step guided experiments
+
+🎓 Educational Use
+
+Ideal for aerospace students
+
+Helps colleges set up low-cost virtual labs
+
+Supports experiment repeatability and remote learning
+
+🛠️ Tech Stack
+Component	Technology
+Engine	Unity (2021+ or 2022 LTS)
+VR Framework	Unity XR Interaction Toolkit / OpenXR
+Modeling	Blender / Free 3D Assets
+Scripting	C#
+UI	Unity Canvas, TextMeshPro
+Version Control	Git & GitHub
