@@ -1,185 +1,609 @@
-import React, { useState } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Html, Center, Float } from '@react-three/drei';
+import { OrbitControls, Html, Center, Float, ContactShadows, Environment } from '@react-three/drei';
 import { SATELLITE_EXAMPLES } from '../constants';
-import { SatelliteData } from '../types';
-import { ArrowLeft, Cpu, Radio, Zap } from 'lucide-react';
+import { ArrowLeft, Cpu, Radio, Zap, Layers, ZoomIn, MousePointer2 } from 'lucide-react';
+import * as THREE from 'three';
 
 interface SatelliteLabProps {
   onHome: () => void;
 }
 
-// A simple boxy satellite model for "Network Satellite"
-const NetworkSatellite = ({ onSelect, selected }: { onSelect: () => void, selected: boolean }) => {
+// --- Types ---
+interface ComponentInfo {
+  name: string;
+  type: 'Internal' | 'External';
+  description: string;
+  specs: string;
+}
+
+interface PartProps {
+  name: string;
+  info: ComponentInfo;
+  position: [number, number, number];
+  explodedPos: [number, number, number];
+  rotation?: [number, number, number];
+  isExploded: boolean;
+  isSelected: boolean;
+  onSelect: (info: ComponentInfo) => void;
+  children: React.ReactNode;
+}
+
+// --- Helper Component for Interactive Parts ---
+const InteractivePart: React.FC<PartProps> = ({ 
+  name, info, position, explodedPos, rotation = [0,0,0], isExploded, isSelected, onSelect, children 
+}) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const [hovered, setHovered] = useState(false);
+
+  useFrame((state, delta) => {
+    if (groupRef.current) {
+      const target = isExploded ? new THREE.Vector3(...explodedPos) : new THREE.Vector3(...position);
+      groupRef.current.position.lerp(target, delta * 3);
+    }
+  });
+
   return (
-    <group onClick={(e) => { e.stopPropagation(); onSelect(); }}>
-      <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-        {/* Main Body */}
-        <mesh position={[0, 0, 0]}>
-          <boxGeometry args={[1, 2, 1]} />
-          <meshStandardMaterial color={selected ? "#00FFFF" : "#888"} wireframe={selected} />
+    <group 
+      ref={groupRef} 
+      rotation={new THREE.Euler(...rotation)}
+      onClick={(e) => { e.stopPropagation(); onSelect(info); }}
+      onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
+      onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
+    >
+      {children}
+      {/* Highlight Selection Halo */}
+      {(isSelected || hovered) && (
+        <mesh scale={[1.05, 1.05, 1.05]}>
+           {/* Invisible hit box slightly larger or just overlay effect? 
+               Using traverse in children might be better, but for simple shapes: */}
+           {/* We rely on the material emissive property change in children usually, 
+               but here we wrap. */}
         </mesh>
-        {/* Solar Panels */}
-        <mesh position={[2, 0, 0]} rotation={[0, 0, 0.2]}>
-          <boxGeometry args={[3, 0.1, 1]} />
-          <meshStandardMaterial color="#223344" metalness={0.8} roughness={0.2} />
-        </mesh>
-        <mesh position={[-2, 0, 0]} rotation={[0, 0, -0.2]}>
-          <boxGeometry args={[3, 0.1, 1]} />
-          <meshStandardMaterial color="#223344" metalness={0.8} roughness={0.2} />
-        </mesh>
-        {/* Antenna */}
-        <mesh position={[0, 1.2, 0]}>
-          <coneGeometry args={[0.3, 0.8, 16]} />
-          <meshStandardMaterial color="#aaa" />
-        </mesh>
-        
-        {/* Label */}
-        <Html position={[0, -1.5, 0]} center transform>
-          <div className="text-white bg-black/50 px-2 py-1 text-xs border border-white/30 rounded">
-            Network Satellite
-          </div>
-        </Html>
-      </Float>
+      )}
+      {isSelected && (
+         <Html position={[0, 0, 0]} center distanceFactor={10} zIndexRange={[100, 0]}>
+            <div className="w-3 h-3 bg-cyan-400 rounded-full shadow-[0_0_10px_cyan] border-2 border-white animate-pulse" />
+            <div className="ml-4 bg-black/80 border border-cyan-500/50 text-cyan-100 text-[10px] px-2 py-1 rounded whitespace-nowrap backdrop-blur-sm">
+               {name}
+            </div>
+         </Html>
+      )}
     </group>
   );
 };
 
-// A rover-like model for "Rover Satellite" (Lander)
-const RoverSatellite = ({ onSelect, selected }: { onSelect: () => void, selected: boolean }) => {
-  return (
-    <group onClick={(e) => { e.stopPropagation(); onSelect(); }}>
-      <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.2}>
-        {/* Main Body */}
-        <mesh position={[0, 0, 0]}>
-          <dodecahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color={selected ? "#00FFFF" : "#A52A2A"} wireframe={selected} />
-        </mesh>
-        {/* Legs */}
-        {[0, 1, 2, 3].map((i) => (
-          <mesh key={i} position={[Math.cos(i * Math.PI/2)*0.8, -0.8, Math.sin(i * Math.PI/2)*0.8]} rotation={[0.5, i * Math.PI/2, 0]}>
-            <cylinderGeometry args={[0.1, 0.1, 1]} />
-            <meshStandardMaterial color="#555" />
-          </mesh>
-        ))}
-        {/* Dish */}
-        <mesh position={[0.8, 0.5, 0]} rotation={[0, 0, -0.5]}>
-           <cylinderGeometry args={[0.5, 0.1, 0.2]} />
-           <meshStandardMaterial color="#ddd" />
-        </mesh>
+// --- Realistic Materials ---
+const goldMaterial = new THREE.MeshStandardMaterial({
+  color: '#ffaa00',
+  metalness: 1,
+  roughness: 0.3,
+  bumpScale: 0.02,
+});
 
-         {/* Label */}
-         <Html position={[0, -1.8, 0]} center transform>
-          <div className="text-white bg-black/50 px-2 py-1 text-xs border border-white/30 rounded">
-            Rover Satellite
-          </div>
-        </Html>
-      </Float>
+const solarPanelMaterial = new THREE.MeshStandardMaterial({
+  color: '#1e3a8a', // Dark Blue
+  metalness: 0.8,
+  roughness: 0.2,
+  emissive: '#172554',
+  emissiveIntensity: 0.2
+});
+
+const hullMaterial = new THREE.MeshStandardMaterial({
+  color: '#e2e8f0',
+  metalness: 0.6,
+  roughness: 0.4
+});
+
+const darkMetalMaterial = new THREE.MeshStandardMaterial({
+  color: '#334155',
+  metalness: 0.8,
+  roughness: 0.5
+});
+
+// --- Models ---
+
+const NetworkSatelliteModel = ({ isExploded, selectedPartName, onSelectPart }: any) => {
+  return (
+    <group rotation={[0, Math.PI / 4, 0]}>
+      {/* 1. MAIN BUS (Internal/Core) */}
+      <InteractivePart
+        name="Avionics Bus"
+        info={{
+            name: "Core Avionics Bus",
+            type: "Internal",
+            description: "Main flight computer and thermal control system wrapped in multi-layer insulation (MLI).",
+            specs: "Rad-Hardened CPU, Gold Foil Insulation"
+        }}
+        position={[0, 0, 0]}
+        explodedPos={[0, 0, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Core Avionics Bus"}
+        onSelect={onSelectPart}
+      >
+        <mesh material={goldMaterial}>
+          <boxGeometry args={[1.2, 1.8, 1.2]} />
+        </mesh>
+        {/* Detail greebles */}
+        <mesh position={[0.61, 0, 0]} material={darkMetalMaterial}>
+           <boxGeometry args={[0.05, 1, 0.8]} />
+        </mesh>
+      </InteractivePart>
+
+      {/* 2. BATTERY PACK (Internal - visible when exploded) */}
+      <InteractivePart
+        name="Power Cell"
+        info={{
+            name: "Lithium-Ion Battery Array",
+            type: "Internal",
+            description: "Stores energy generated by solar panels for eclipse operations.",
+            specs: "Capacity: 1200 Wh"
+        }}
+        position={[0, 0, 0]} // Hidden inside normally
+        explodedPos={[0, 1.5, 0]} // Pops up
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Lithium-Ion Battery Array"}
+        onSelect={onSelectPart}
+      >
+        <mesh material={darkMetalMaterial}>
+           <cylinderGeometry args={[0.3, 0.3, 0.8, 16]} />
+        </mesh>
+        <mesh position={[0, 0.45, 0]}>
+           <boxGeometry args={[0.1, 0.1, 0.1]} />
+           <meshBasicMaterial color="red" />
+        </mesh>
+      </InteractivePart>
+
+      {/* 3. SOLAR ARRAY LEFT */}
+      <InteractivePart
+        name="Solar Array (Port)"
+        info={{
+            name: "Photovoltaic Wing (Port)",
+            type: "External",
+            description: "Triple-junction solar cells converting sunlight to electricity.",
+            specs: "Output: 2.5 kW"
+        }}
+        position={[-0.6, 0, 0]}
+        explodedPos={[-2, 0, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Photovoltaic Wing (Port)"}
+        onSelect={onSelectPart}
+      >
+        <group rotation={[0, 0, 0]}>
+           <mesh position={[-1.6, 0, 0]} material={solarPanelMaterial}>
+             <boxGeometry args={[3, 1, 0.05]} />
+           </mesh>
+           {/* Hinge */}
+           <mesh position={[-0.1, 0, 0]} rotation={[0, 0, Math.PI/2]} material={darkMetalMaterial}>
+             <cylinderGeometry args={[0.1, 0.1, 0.4]} />
+           </mesh>
+        </group>
+      </InteractivePart>
+
+      {/* 4. SOLAR ARRAY RIGHT */}
+      <InteractivePart
+        name="Solar Array (Starboard)"
+        info={{
+            name: "Photovoltaic Wing (Starboard)",
+            type: "External",
+            description: "Triple-junction solar cells converting sunlight to electricity.",
+            specs: "Output: 2.5 kW"
+        }}
+        position={[0.6, 0, 0]}
+        explodedPos={[2, 0, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Photovoltaic Wing (Starboard)"}
+        onSelect={onSelectPart}
+      >
+         <group rotation={[0, 0, 0]}>
+           <mesh position={[1.6, 0, 0]} material={solarPanelMaterial}>
+             <boxGeometry args={[3, 1, 0.05]} />
+           </mesh>
+           <mesh position={[0.1, 0, 0]} rotation={[0, 0, Math.PI/2]} material={darkMetalMaterial}>
+             <cylinderGeometry args={[0.1, 0.1, 0.4]} />
+           </mesh>
+        </group>
+      </InteractivePart>
+
+      {/* 5. COMMS DISH */}
+      <InteractivePart
+        name="High-Gain Antenna"
+        info={{
+            name: "Parabolic Reflector",
+            type: "External",
+            description: "Ka-band high-gain antenna for deep space communication.",
+            specs: "Diameter: 1.2m"
+        }}
+        position={[0, 0, 0.6]}
+        explodedPos={[0, 0, 2]}
+        rotation={[Math.PI/2, 0, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Parabolic Reflector"}
+        onSelect={onSelectPart}
+      >
+        <mesh material={new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.1 })}>
+           {/* Dish shape */}
+           <coneGeometry args={[0.8, 0.4, 32, 1, true]} />
+        </mesh>
+        {/* Feed horn */}
+        <mesh position={[0, 0.2, 0]} material={darkMetalMaterial}>
+           <cylinderGeometry args={[0.05, 0.1, 0.5]} />
+        </mesh>
+        {/* Mount */}
+        <mesh position={[0, -0.2, 0]} material={darkMetalMaterial}>
+           <cylinderGeometry args={[0.2, 0.2, 0.1]} />
+        </mesh>
+      </InteractivePart>
+
+      {/* 6. OPTICAL CAMERA (New) */}
+      <InteractivePart
+        name="Optical Payload"
+        info={{
+            name: "NavCam System",
+            type: "External",
+            description: "High-fidelity optical sensors for Earth observation and star tracking.",
+            specs: "Res: 4K, f/1.8 Aperture"
+        }}
+        position={[0, 0.6, -0.6]} // Front face
+        explodedPos={[0, 2, -2]}
+        rotation={[0, Math.PI, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "NavCam System"}
+        onSelect={onSelectPart}
+      >
+        <mesh material={darkMetalMaterial}>
+           <boxGeometry args={[0.4, 0.3, 0.2]} />
+        </mesh>
+        {/* Lens Housing */}
+        <mesh position={[0, 0, 0.15]} rotation={[Math.PI/2, 0, 0]} material={darkMetalMaterial}>
+           <cylinderGeometry args={[0.12, 0.12, 0.15]} />
+        </mesh>
+        {/* Glass Lens */}
+        <mesh position={[0, 0, 0.23]} rotation={[Math.PI/2, 0, 0]}>
+           <cylinderGeometry args={[0.1, 0.1, 0.02]} />
+           <meshStandardMaterial color="#a5f3fc" roughness={0} metalness={1} emissive="#a5f3fc" emissiveIntensity={0.2} />
+        </mesh>
+      </InteractivePart>
+
+      {/* 7. THRUSTERS (New) */}
+      <InteractivePart
+        name="Propulsion"
+        info={{
+            name: "RCS Thruster Cluster",
+            type: "External",
+            description: "Hydrazine reaction control system for attitude adjustments and orbital station keeping.",
+            specs: "Thrust: 4x 10N"
+        }}
+        position={[0, -0.8, 0]}
+        explodedPos={[0, -2.5, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "RCS Thruster Cluster"}
+        onSelect={onSelectPart}
+      >
+        {/* 4 Corner Thrusters */}
+        {[45, 135, 225, 315].map((deg, i) => {
+             const rad = (deg * Math.PI) / 180;
+             const x = Math.cos(rad) * 0.65;
+             const z = Math.sin(rad) * 0.65;
+             return (
+                <group key={i} position={[x, 0, z]} rotation={[0, -rad, 0]}>
+                   <mesh material={darkMetalMaterial}>
+                      <boxGeometry args={[0.15, 0.15, 0.15]} />
+                   </mesh>
+                   {/* Nozzle */}
+                   <mesh position={[0.1, 0, 0]} rotation={[0, 0, -Math.PI/2]}>
+                      <coneGeometry args={[0.05, 0.15, 16, 1, true]} />
+                      <meshStandardMaterial color="#333" side={THREE.DoubleSide} />
+                   </mesh>
+                </group>
+             )
+        })}
+      </InteractivePart>
     </group>
   );
 };
+
+const RoverSatelliteModel = ({ isExploded, selectedPartName, onSelectPart }: any) => {
+  return (
+    <group rotation={[0, -Math.PI / 6, 0]}>
+      
+      {/* 1. CHASSIS */}
+      <InteractivePart
+        name="Rover Chassis"
+        info={{
+            name: "Hexagonal Chassis",
+            type: "Internal",
+            description: "Lightweight aluminum composite frame housing instrument electronics.",
+            specs: "Material: Al-Li Alloy"
+        }}
+        position={[0, 0, 0]}
+        explodedPos={[0, 0.5, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Hexagonal Chassis"}
+        onSelect={onSelectPart}
+      >
+         <mesh material={hullMaterial}>
+            <cylinderGeometry args={[1, 1, 0.6, 6]} />
+         </mesh>
+         {/* Top Deck */}
+         <mesh position={[0, 0.31, 0]} material={solarPanelMaterial}>
+            <cylinderGeometry args={[0.9, 0.9, 0.05, 6]} />
+         </mesh>
+      </InteractivePart>
+
+      {/* 2. WHEELS (Grouped visually but single part for click) */}
+      <InteractivePart
+        name="Mobility System"
+        info={{
+            name: "6-Wheel Suspension",
+            type: "External",
+            description: "Rocker-bogie suspension system with independent drive motors.",
+            specs: "Speed: 4 cm/s"
+        }}
+        position={[0, -0.5, 0]}
+        explodedPos={[0, -1.5, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "6-Wheel Suspension"}
+        onSelect={onSelectPart}
+      >
+        {[0, 60, 120, 180, 240, 300].map((deg, i) => {
+             const rad = (deg * Math.PI) / 180;
+             const x = Math.cos(rad) * 1.2;
+             const z = Math.sin(rad) * 1.2;
+             return (
+               <group key={i} position={[x, 0, z]} rotation={[0, -rad, 0]}>
+                 <mesh rotation={[0, 0, Math.PI/2]} material={new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.9 })}>
+                    <cylinderGeometry args={[0.3, 0.3, 0.2, 16]} />
+                 </mesh>
+                 <mesh rotation={[0, 0, Math.PI/2]} material={new THREE.MeshStandardMaterial({ color: '#888', wireframe: true })}>
+                    <cylinderGeometry args={[0.31, 0.31, 0.21, 8]} />
+                 </mesh>
+                 {/* Strut */}
+                 <mesh position={[-0.4, 0.4, 0]} rotation={[0, 0, -0.5]} material={darkMetalMaterial}>
+                    <cylinderGeometry args={[0.05, 0.05, 1]} />
+                 </mesh>
+               </group>
+             )
+        })}
+      </InteractivePart>
+
+      {/* 3. CAMERA MAST */}
+      <InteractivePart
+        name="Remote Sensing Mast"
+        info={{
+            name: "Main Camera Mast",
+            type: "External",
+            description: "Stereoscopic navigation cameras and ChemCam laser spectroscopy unit.",
+            specs: "Height: 1.1m"
+        }}
+        position={[0.6, 0.5, 0]}
+        explodedPos={[1.5, 1.5, 0]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Main Camera Mast"}
+        onSelect={onSelectPart}
+      >
+         {/* Pole */}
+         <mesh position={[0, 0.5, 0]} material={darkMetalMaterial}>
+            <cylinderGeometry args={[0.08, 0.08, 1]} />
+         </mesh>
+         {/* Head */}
+         <mesh position={[0, 1, 0]} material={hullMaterial}>
+            <boxGeometry args={[0.4, 0.2, 0.2]} />
+         </mesh>
+         {/* Eyes */}
+         <mesh position={[0.1, 1, 0.1]} rotation={[Math.PI/2, 0, 0]}>
+            <cylinderGeometry args={[0.05, 0.05, 0.05]} />
+            <meshBasicMaterial color="black" />
+         </mesh>
+         <mesh position={[-0.1, 1, 0.1]} rotation={[Math.PI/2, 0, 0]}>
+            <cylinderGeometry args={[0.05, 0.05, 0.05]} />
+            <meshBasicMaterial color="black" />
+         </mesh>
+      </InteractivePart>
+
+      {/* 4. POWER SOURCE (RTG) */}
+      <InteractivePart
+        name="RTG Power"
+        info={{
+            name: "Radioisotope Generator (RTG)",
+            type: "External",
+            description: "Nuclear battery using heat from Plutonium-238 decay to generate electricity.",
+            specs: "Output: 110W"
+        }}
+        position={[-0.8, 0, 0]}
+        explodedPos={[-2, 0.5, 0]}
+        rotation={[0, 0, -0.2]}
+        isExploded={isExploded}
+        isSelected={selectedPartName === "Radioisotope Generator (RTG)"}
+        onSelect={onSelectPart}
+      >
+         <mesh material={darkMetalMaterial}>
+            <cylinderGeometry args={[0.2, 0.2, 0.6, 8]} />
+         </mesh>
+         {/* Cooling fins */}
+         <mesh material={darkMetalMaterial}>
+            <cylinderGeometry args={[0.3, 0.3, 0.4, 8]} />
+         </mesh>
+      </InteractivePart>
+
+    </group>
+  );
+};
+
 
 const SatelliteLab: React.FC<SatelliteLabProps> = ({ onHome }) => {
-  const [activeSatId, setActiveSatId] = useState<string | null>(null);
+  const [activeSatId, setActiveSatId] = useState<string>('net-sat-1');
+  const [isExploded, setIsExploded] = useState(false);
+  const [selectedComponent, setSelectedComponent] = useState<ComponentInfo | null>(null);
 
   const activeData = SATELLITE_EXAMPLES.find(s => s.id === activeSatId);
 
+  const handlePartSelect = (info: ComponentInfo) => {
+    setSelectedComponent(info);
+  };
+
+  const resetSelection = () => {
+     setSelectedComponent(null);
+  };
+
   return (
-    <div className="w-full h-screen bg-slate-900 relative overflow-hidden">
-      {/* Grid Background */}
-      <div className="absolute inset-0 z-0 opacity-10" 
-           style={{ 
-             backgroundImage: 'linear-gradient(#4fd1c5 1px, transparent 1px), linear-gradient(90deg, #4fd1c5 1px, transparent 1px)',
-             backgroundSize: '40px 40px'
-           }}
-      />
-
-      {/* 3D Canvas */}
-      <Canvas camera={{ position: [0, 2, 8], fov: 50 }}>
-        <ambientLight intensity={0.5} />
-        <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
-        <OrbitControls enableZoom={false} />
+    <div className="w-full h-screen bg-slate-900 relative overflow-hidden flex">
+      
+      {/* 3D Viewport */}
+      <div className="flex-grow relative">
         
-        <Center position={[-2.5, 0, 0]}>
-          <NetworkSatellite 
-            selected={activeSatId === 'net-sat-1'}
-            onSelect={() => setActiveSatId('net-sat-1')} 
-          />
-        </Center>
+        <div className="absolute top-8 left-8 z-10 flex gap-4">
+           <button 
+            onClick={onHome} 
+            className="flex items-center text-cyan-400 hover:text-white transition-colors bg-black/50 px-4 py-2 rounded border border-cyan-500/30 backdrop-blur-sm"
+           >
+             <ArrowLeft className="w-5 h-5 mr-2" />
+             Orbit
+           </button>
+        </div>
 
-        <Center position={[2.5, 0, 0]}>
-          <RoverSatellite 
-            selected={activeSatId === 'rover-1'}
-            onSelect={() => setActiveSatId('rover-1')} 
-          />
-        </Center>
-      </Canvas>
+        {/* Explode Toggle */}
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10">
+           <button
+             onClick={(e) => { e.stopPropagation(); setIsExploded(!isExploded); }}
+             className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold shadow-lg transition-all ${isExploded ? 'bg-cyan-600 text-white ring-4 ring-cyan-500/30' : 'bg-slate-800 text-gray-300 hover:bg-slate-700'}`}
+           >
+             <Layers className="w-5 h-5" />
+             {isExploded ? 'ASSEMBLE SYSTEM' : 'EXPLODE COMPONENTS'}
+           </button>
+           <p className="text-center text-xs text-gray-500 mt-2">
+             {isExploded ? 'Click parts to view internal specs' : 'Click model to separate parts'}
+           </p>
+        </div>
+        
+        {/* Sat Selector Tabs */}
+        <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-black/50 rounded-full p-1 border border-gray-700 backdrop-blur-md z-10">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setActiveSatId('net-sat-1'); resetSelection(); setIsExploded(false); }}
+            className={`px-6 py-2 rounded-full text-sm font-bold transition-colors ${activeSatId === 'net-sat-1' ? 'bg-cyan-500 text-black' : 'text-gray-400 hover:text-white'}`}
+          >
+            Network Sat
+          </button>
+          <button 
+             onClick={(e) => { e.stopPropagation(); setActiveSatId('rover-1'); resetSelection(); setIsExploded(false); }}
+             className={`px-6 py-2 rounded-full text-sm font-bold transition-colors ${activeSatId === 'rover-1' ? 'bg-orange-500 text-black' : 'text-gray-400 hover:text-white'}`}
+          >
+            Mars Rover
+          </button>
+        </div>
 
-      {/* Top Nav */}
-      <div className="absolute top-8 left-8 z-10">
-        <button onClick={onHome} className="flex items-center text-cyan-400 hover:text-white transition-colors">
-          <ArrowLeft className="w-5 h-5 mr-2" />
-          Return to Orbit
-        </button>
+        <Canvas 
+            camera={{ position: [4, 2, 6], fov: 40 }} 
+            shadows
+            onPointerMissed={() => resetSelection()}
+        >
+          <Environment preset="city" />
+          <ambientLight intensity={0.5} />
+          <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1} castShadow />
+          
+          <Float speed={isExploded ? 0.2 : 1} rotationIntensity={isExploded ? 0.1 : 0.5} floatIntensity={0.5}>
+             <Center>
+               {activeSatId === 'net-sat-1' ? (
+                 <NetworkSatelliteModel 
+                    isExploded={isExploded} 
+                    selectedPartName={selectedComponent?.name} 
+                    onSelectPart={handlePartSelect}
+                 />
+               ) : (
+                 <RoverSatelliteModel 
+                    isExploded={isExploded} 
+                    selectedPartName={selectedComponent?.name} 
+                    onSelectPart={handlePartSelect}
+                 />
+               )}
+             </Center>
+          </Float>
+
+          <ContactShadows position={[0, -2, 0]} opacity={0.5} scale={10} blur={2.5} far={4} />
+          <OrbitControls makeDefault minDistance={3} maxDistance={12} />
+        </Canvas>
       </div>
 
-      {/* Right Panel: Satellite Info (Sketch 4 "Info" boxes) */}
-      <div className="absolute top-0 right-0 w-1/3 h-full bg-black/90 border-l border-cyan-500/30 p-8 backdrop-blur-md transform transition-transform duration-500 flex flex-col">
-        <h2 className="text-3xl font-bold text-white mb-2 brand-font">Satellite Lab</h2>
-        <p className="text-gray-400 mb-8 text-sm">Select a unit to inspect engineering schematics.</p>
+      {/* Right Panel: Info */}
+      <div className="w-96 bg-slate-900 border-l border-cyan-500/30 p-8 z-20 shadow-2xl flex flex-col">
+        
+        <div className="mb-6">
+           <div className="flex items-center justify-between mb-1">
+              <h2 className="text-3xl font-bold text-white brand-font">{activeData?.name}</h2>
+              <span className="text-xs bg-slate-800 text-gray-400 px-2 py-1 rounded border border-slate-700">{activeData?.type}</span>
+           </div>
+           <p className="text-gray-400 text-sm italic">{activeData?.description}</p>
+        </div>
 
-        {activeData ? (
-          <div className="space-y-8 animate-in slide-in-from-right duration-500">
-            <div className="border-b border-gray-700 pb-4">
-              <h3 className="text-2xl text-cyan-400 font-bold">{activeData.name}</h3>
-              <p className="text-gray-400 italic mt-1">{activeData.description}</p>
-            </div>
+        {/* Dynamic Info Area */}
+        <div className="flex-grow relative">
+           {selectedComponent ? (
+             <div className="bg-slate-800/80 border border-cyan-500/50 rounded p-5 animate-in slide-in-from-right duration-300 h-full">
+                <div className="flex items-center gap-2 text-cyan-400 mb-4 border-b border-gray-700 pb-2">
+                   <ZoomIn className="w-5 h-5" />
+                   <h3 className="text-lg font-bold">Component Detail</h3>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-gray-500 text-[10px] uppercase tracking-wider">Component Name</p>
+                    <p className="text-2xl text-white font-mono leading-tight">{selectedComponent.name}</p>
+                  </div>
+                  
+                  <div>
+                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${selectedComponent.type === 'Internal' ? 'bg-purple-900 text-purple-200' : 'bg-green-900 text-green-200'}`}>
+                        {selectedComponent.type.toUpperCase()} MODULE
+                     </span>
+                  </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              <div className="bg-gray-800/50 p-4 rounded flex items-center">
-                 <div className="w-10 h-10 bg-cyan-900/50 rounded flex items-center justify-center mr-4">
-                   <Cpu className="text-cyan-400 w-6 h-6" />
-                 </div>
-                 <div>
-                   <p className="text-xs text-gray-500 uppercase">Total Mass</p>
-                   <p className="text-xl font-mono text-white">{activeData.specs.mass}</p>
-                 </div>
-              </div>
+                  <div>
+                    <p className="text-gray-500 text-[10px] uppercase tracking-wider mt-2">Function</p>
+                    <p className="text-gray-300 text-sm">{selectedComponent.description}</p>
+                  </div>
 
-              <div className="bg-gray-800/50 p-4 rounded flex items-center">
-                 <div className="w-10 h-10 bg-orange-900/50 rounded flex items-center justify-center mr-4">
-                   <Zap className="text-orange-400 w-6 h-6" />
-                 </div>
-                 <div>
-                   <p className="text-xs text-gray-500 uppercase">Power Source</p>
-                   <p className="text-xl font-mono text-white">{activeData.specs.power}</p>
-                 </div>
-              </div>
+                  <div className="bg-black/30 p-3 rounded border border-gray-700">
+                    <p className="text-cyan-500 text-[10px] uppercase tracking-wider">Technical Specs</p>
+                    <p className="text-white font-mono text-sm mt-1">{selectedComponent.specs}</p>
+                  </div>
+                </div>
+             </div>
+           ) : (
+             <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4 border-2 border-dashed border-gray-800 rounded-lg p-4">
+                <MousePointer2 className="w-12 h-12 opacity-50" />
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-500">No Component Selected</p>
+                  <p className="text-xs mt-2 max-w-[200px]">
+                    {isExploded 
+                      ? "Click on any floating part to view its engineering specifications."
+                      : "Click 'Explode Components' or inspect the model to begin."}
+                  </p>
+                </div>
+             </div>
+           )}
+        </div>
 
-              <div className="bg-gray-800/50 p-4 rounded flex items-center">
-                 <div className="w-10 h-10 bg-purple-900/50 rounded flex items-center justify-center mr-4">
-                   <Radio className="text-purple-400 w-6 h-6" />
-                 </div>
-                 <div>
-                   <p className="text-xs text-gray-500 uppercase">Target Orbit</p>
-                   <p className="text-xl font-mono text-white">{activeData.specs.orbit}</p>
-                 </div>
-              </div>
-            </div>
-            
-            <div className="mt-8 p-4 border border-dashed border-gray-600 rounded text-center text-xs text-gray-500">
-              <p>SCHEMATIC VER 4.2.1</p>
-              <p>CONFIDENTIAL ENGINEERING DATA</p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center opacity-30">
-            <div className="text-center">
-              <div className="w-16 h-16 border-2 border-white rounded-full mx-auto mb-4 animate-pulse"></div>
-              <p>Waiting for selection...</p>
-            </div>
-          </div>
-        )}
+        {/* Bottom General Stats */}
+        <div className="mt-6 pt-6 border-t border-gray-800 grid grid-cols-2 gap-4">
+             <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center">
+                   <Cpu className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div>
+                   <p className="text-[10px] text-gray-500 uppercase">Mass</p>
+                   <p className="text-sm font-mono text-white">{activeData?.specs.mass}</p>
+                </div>
+             </div>
+             <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center">
+                   <Zap className="w-4 h-4 text-orange-400" />
+                </div>
+                <div>
+                   <p className="text-[10px] text-gray-500 uppercase">Power</p>
+                   <p className="text-sm font-mono text-white">{activeData?.specs.power}</p>
+                </div>
+             </div>
+        </div>
       </div>
     </div>
   );

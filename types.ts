@@ -3,6 +3,10 @@ export enum ViewState {
   LANDING = 'LANDING',
   SOLAR_SYSTEM = 'SOLAR_SYSTEM',
   SATELLITE_LAB = 'SATELLITE_LAB',
+  ROCKET_LAB = 'ROCKET_LAB',
+  GRAVITY_LAB = 'GRAVITY_LAB',
+  SOLAR_LAB = 'SOLAR_LAB',
+  ORBITAL_LAB = 'ORBITAL_LAB',
 }
 
 export interface CelestialBodyData {

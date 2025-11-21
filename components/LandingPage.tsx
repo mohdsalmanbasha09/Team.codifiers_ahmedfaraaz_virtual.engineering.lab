@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 
@@ -8,6 +9,7 @@ interface LandingPageProps {
 const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
   return (
     <div className="relative w-full h-screen bg-black flex flex-col items-center justify-center overflow-hidden">
+      
       {/* Deep Space Background */}
       <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,_#0f172a_0%,_#000000_100%)]"></div>
       
@@ -46,14 +48,16 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
       {/* Content */}
       <div className="relative z-20 flex flex-col items-center text-center -mt-48 space-y-10">
-        <div className="space-y-4 animate-in fade-in zoom-in duration-1000">
+        <div className="space-y-4 animate-in fade-in zoom-in duration-1000 flex flex-col items-center">
           <h2 className="text-cyan-400 text-lg tracking-[0.8em] uppercase font-bold">Welcome to</h2>
-          <h1 className="text-6xl md:text-9xl font-black text-white brand-font tracking-tighter drop-shadow-[0_0_30px_rgba(0,255,255,0.2)]">
+          
+          {/* Title Text */}
+          <h1 className="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-blue-600 tracking-tighter filter drop-shadow-[0_0_15px_rgba(0,255,255,0.5)] brand-font animate-pulse">
             AEROVERSE
           </h1>
         </div>
 
-        <p className="text-gray-400 text-lg max-w-lg font-light tracking-wider border-b border-cyan-500/30 pb-4">
+        <p className="text-slate-500 text-lg max-w-lg font-bold tracking-wider border-b border-cyan-500/30 pb-4">
            Virtual Engineering Lab <span className="text-cyan-500 mx-2">|</span> Solar System Simulation
         </p>
 

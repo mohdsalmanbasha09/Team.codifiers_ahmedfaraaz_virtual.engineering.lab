@@ -1,18 +1,39 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+
+import React, { useRef, useState, useEffect, useMemo, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars, Html } from '@react-three/drei';
+import { OrbitControls, Stars, Html, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
+import { VRButton } from 'three-stdlib';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { CelestialBodyData, PlanetEngineeringInfo } from '../types';
 import { SOLAR_SYSTEM_DATA } from '../constants';
 import { getPlanetEngineeringData } from '../services/geminiService';
-import { ArrowRight, ArrowLeft, Loader, X, Ruler, Moon } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Loader, X, Ruler, Moon, Rocket, Weight, Zap, Globe, Glasses } from 'lucide-react';
 
 interface SolarSystem3DProps {
   mode: '2D' | '3D';
   onNext: () => void;
   onPrev?: () => void;
+  onRocketLab?: () => void;
+  onGravityLab?: () => void;
+  onSolarLab?: () => void;
+  onOrbitalLab?: () => void;
 }
+
+// --- VR Helper ---
+const VRIntegration = () => {
+  const { gl } = useThree();
+  useEffect(() => {
+    gl.xr.enabled = true;
+    const button = VRButton.createButton(gl);
+    document.body.appendChild(button);
+    return () => {
+      button.remove();
+      gl.xr.enabled = false;
+    };
+  }, [gl]);
+  return null;
+};
 
 // --- 3D Scene Components ---
 
@@ -24,20 +45,36 @@ interface SunProps {
 }
 
 const Sun: React.FC<SunProps> = ({ data, onClick, isSelected, setRef }) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  // Pulse animation for selection
+  useFrame((state) => {
+    if (isSelected && meshRef.current) {
+      const t = state.clock.getElapsedTime();
+      const scale = 1 + Math.sin(t * 3) * 0.02;
+      meshRef.current.scale.set(scale, scale, scale);
+    }
+  });
+
   return (
     <mesh 
-      ref={setRef}
+      ref={(el) => {
+        meshRef.current = el;
+        setRef(el);
+      }}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
       onPointerOut={() => { document.body.style.cursor = 'auto'; }}
     >
-      <sphereGeometry args={[data.radius, 32, 32]} />
-      <meshStandardMaterial 
-        color={data.color} 
-        emissive={data.color} 
-        emissiveIntensity={isSelected ? 2 : 1} 
-      />
+      <sphereGeometry args={[data.radius, 64, 64]} />
+      <meshBasicMaterial color={data.color} />
       <pointLight distance={300} intensity={2} color="#ffffff" />
+      
+      {/* Glow effect (simple sprite-like mesh) */}
+      <mesh scale={[1.2, 1.2, 1.2]}>
+        <sphereGeometry args={[data.radius, 32, 32]} />
+        <meshBasicMaterial color={data.color} transparent opacity={0.3} />
+      </mesh>
     </mesh>
   );
 };
@@ -72,16 +109,10 @@ const Planet: React.FC<PlanetProps> = ({
 
   useFrame(({ clock }) => {
     if (groupRef.current && data.id !== 'sun') {
-      // Orbit Logic
       const t = clock.getElapsedTime() * (data.speed * 0.1) + startAngle;
       const x = Math.cos(t) * data.distance;
       const z = Math.sin(t) * data.distance;
       groupRef.current.position.set(x, 0, z);
-      
-      // Rotate planet on its axis
-      if (meshRef.current) {
-        meshRef.current.rotation.y += 0.01;
-      }
     }
   });
 
@@ -93,27 +124,36 @@ const Planet: React.FC<PlanetProps> = ({
     <group>
       {/* Orbit Line (Visual only) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[data.distance - 0.1, data.distance + 0.1, 64]} />
-        <meshBasicMaterial color="#555" opacity={0.3} transparent side={THREE.DoubleSide} />
+        <ringGeometry args={[data.distance - 0.1, data.distance + 0.1, 128]} />
+        <meshBasicMaterial color="#444" opacity={0.2} transparent side={THREE.DoubleSide} />
       </mesh>
 
       {/* The Moving Planet Group */}
       <group ref={groupRef}>
-        <mesh 
-          ref={meshRef}
+        <group
           onClick={(e) => { e.stopPropagation(); onClick(data); }}
           onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
           onPointerOut={() => { document.body.style.cursor = 'auto'; }}
         >
-          <sphereGeometry args={[data.radius, 32, 32]} />
-          <meshStandardMaterial 
-            color={data.color} 
-            metalness={0.2} 
-            roughness={0.8}
-            emissive={isSelected ? '#ffffff' : '#000000'}
-            emissiveIntensity={isSelected ? 0.3 : 0}
-          />
-        </mesh>
+          <mesh ref={meshRef}>
+            <sphereGeometry args={[data.radius, 64, 64]} />
+            <meshStandardMaterial 
+              color={data.color} 
+              metalness={0.2} 
+              roughness={0.7} 
+              emissive={isSelected ? data.color : '#000'}
+              emissiveIntensity={isSelected ? 0.5 : 0}
+            />
+          </mesh>
+          
+          {/* Simple Ring for Saturn (Color based) */}
+          {data.id === 'saturn' && (
+            <mesh rotation={[-Math.PI / 2.5, 0, 0]}>
+              <ringGeometry args={[data.radius * 1.4, data.radius * 2.2, 64]} />
+              <meshBasicMaterial color="#A89C83" side={THREE.DoubleSide} transparent opacity={0.6} />
+            </mesh>
+          )}
+        </group>
         
         {/* Planet Label */}
         {(mode === '2D' || isSelected) && (
@@ -135,10 +175,13 @@ interface CameraControllerProps {
 }
 
 const CameraController: React.FC<CameraControllerProps> = ({ mode, selectedPlanet, planetRefs }) => {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const controlsRef = useRef<OrbitControlsImpl>(null);
   
   useFrame((state, delta) => {
+    // If in VR mode, disable custom camera animation logic to let the headset track freely
+    if (gl.xr.isPresenting) return;
+
     const controls = controlsRef.current;
     if (!controls) return;
 
@@ -165,8 +208,7 @@ const CameraController: React.FC<CameraControllerProps> = ({ mode, selectedPlane
         cameraPos.copy(currentPlanetPos).add(offset);
         state.camera.position.lerp(cameraPos, 4 * delta);
       } else {
-        // In 3D, we want to follow the planet, but allow some rotation ideally.
-        // For this "Lab" version, a locked relative view is more stable for inspecting moving objects.
+        // In 3D, we want to follow the planet
         const offset = new THREE.Vector3(dist, selectedPlanet.radius + 5, dist);
         cameraPos.copy(currentPlanetPos).add(offset);
         
@@ -196,11 +238,13 @@ const CameraController: React.FC<CameraControllerProps> = ({ mode, selectedPlane
     <OrbitControls 
       ref={controlsRef} 
       makeDefault // Essential: connects controls to the canvas
+      enabled={!gl.xr.isPresenting} // Disable controls in VR to avoid conflict
       enableDamping={true}
       dampingFactor={0.05}
       enableZoom={true} 
       enablePan={false} 
-      maxPolarAngle={mode === '2D' ? 0 : Math.PI / 2} 
+      // In 2D we lock to top-down. In 3D we allow full 360 degree rotation (Math.PI)
+      maxPolarAngle={mode === '2D' ? 0 : Math.PI} 
       minDistance={5}
       maxDistance={200}
     />
@@ -209,7 +253,7 @@ const CameraController: React.FC<CameraControllerProps> = ({ mode, selectedPlane
 
 // --- Main Component ---
 
-const SolarSystem3D: React.FC<SolarSystem3DProps> = ({ mode, onNext, onPrev }) => {
+const SolarSystem3D: React.FC<SolarSystem3DProps> = ({ mode, onNext, onPrev, onRocketLab, onGravityLab, onSolarLab, onOrbitalLab }) => {
   const [selectedPlanet, setSelectedPlanet] = useState<CelestialBodyData | null>(null);
   const [engInfo, setEngInfo] = useState<PlanetEngineeringInfo | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(false);
@@ -218,10 +262,6 @@ const SolarSystem3D: React.FC<SolarSystem3DProps> = ({ mode, onNext, onPrev }) =
   const planetRefs = useRef<Record<string, THREE.Object3D>>({});
 
   const handlePlanetClick = async (planet: CelestialBodyData) => {
-    // If clicking the same planet, toggle off? Or just stay. Let's allow re-click to fetch data if needed, 
-    // but for visual stability, if already selected, maybe nothing.
-    // We'll keep the functionality to update data.
-    
     if (selectedPlanet?.id !== planet.id) {
       setEngInfo(null); // Clear old data immediately
     }
@@ -243,9 +283,10 @@ const SolarSystem3D: React.FC<SolarSystem3DProps> = ({ mode, onNext, onPrev }) =
     <div className="relative w-full h-screen bg-black overflow-hidden">
       {/* Canvas */}
       <Canvas shadows camera={{ fov: 45, near: 0.1, far: 1000 }}>
+        <VRIntegration />
         <color attach="background" args={['#000000']} />
         <Stars radius={300} depth={50} count={3000} factor={4} saturation={0} fade speed={1} />
-        <ambientLight intensity={0.2} />
+        <ambientLight intensity={0.3} /> 
         <CameraController mode={mode} selectedPlanet={selectedPlanet} planetRefs={planetRefs} />
 
         {SOLAR_SYSTEM_DATA.map((planet) => (
@@ -273,6 +314,47 @@ const SolarSystem3D: React.FC<SolarSystem3DProps> = ({ mode, onNext, onPrev }) =
            Previous
          </button>
         )}
+        
+        {onRocketLab && (
+          <button
+            onClick={onRocketLab}
+            className="px-4 py-2 border border-orange-500 bg-orange-900/20 text-orange-400 hover:bg-orange-500/20 flex items-center gap-2 backdrop-blur-md transition-all rounded-sm"
+            title="Open Rocket Thrust Experiment"
+          >
+            <Rocket className="w-4 h-4" />
+          </button>
+        )}
+
+        {onGravityLab && (
+          <button
+            onClick={onGravityLab}
+            className="px-4 py-2 border border-purple-500 bg-purple-900/20 text-purple-400 hover:bg-purple-500/20 flex items-center gap-2 backdrop-blur-md transition-all rounded-sm"
+            title="Open Gravity Drop Experiment"
+          >
+            <Weight className="w-4 h-4" />
+          </button>
+        )}
+
+        {onSolarLab && (
+          <button
+            onClick={onSolarLab}
+            className="px-4 py-2 border border-yellow-500 bg-yellow-900/20 text-yellow-400 hover:bg-yellow-500/20 flex items-center gap-2 backdrop-blur-md transition-all rounded-sm"
+            title="Open Solar Power Lab"
+          >
+            <Zap className="w-4 h-4" />
+          </button>
+        )}
+
+        {onOrbitalLab && (
+          <button
+            onClick={onOrbitalLab}
+            className="px-4 py-2 border border-blue-500 bg-blue-900/20 text-blue-400 hover:bg-blue-500/20 flex items-center gap-2 backdrop-blur-md transition-all rounded-sm"
+            title="Open Orbital Injection Lab"
+          >
+            <Globe className="w-4 h-4" />
+          </button>
+        )}
+
         <button 
           onClick={onNext}
           className="px-6 py-2 border border-cyan-500 bg-cyan-900/20 text-cyan-400 hover:bg-cyan-500/20 flex items-center gap-2 backdrop-blur-md transition-all rounded-sm shadow-[0_0_15px_rgba(0,255,255,0.15)]"
@@ -283,12 +365,13 @@ const SolarSystem3D: React.FC<SolarSystem3DProps> = ({ mode, onNext, onPrev }) =
       </div>
 
       {/* Top Left Title/Instruction */}
-      <div className="absolute top-8 left-8 z-10 border-l-4 border-cyan-500 pl-4 pointer-events-none">
+      <div className="absolute top-8 left-8 z-10 border-l-4 border-cyan-500 pl-4 pointer-events-none flex flex-col items-start">
         <h2 className="text-white font-bold text-xl uppercase tracking-widest brand-font">
           {mode === '2D' ? '2D Visualization' : '3D Interactive Lab'}
         </h2>
-        <p className="text-gray-400 text-sm">
+        <p className="text-gray-400 text-sm flex items-center gap-2">
           {mode === '2D' ? 'Click objects to view details. Paths shown.' : 'Interactive orbital mechanics simulation.'}
+          {mode === '3D' && <span className="text-xs bg-white/10 px-2 py-0.5 rounded flex items-center gap-1 border border-white/20"><Glasses className="w-3 h-3"/> VR Ready</span>}
         </p>
       </div>
 
